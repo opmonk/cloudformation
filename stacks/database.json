@@ -1,0 +1,289 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Resources": {
+		"VPC": {
+			"Type": "AWS::EC2::VPC",
+			"Properties": {
+				"CidrBlock": "172.33.0.0/16",
+				"InstanceTenancy": "default",
+				"EnableDnsSupport": "true",
+				"EnableDnsHostnames": "true",
+				"Tags": [{
+					"Key": "Name",
+					"Value": "VPC"
+				}]
+			}
+		},
+		"InternetGateway": {
+			"Type": "AWS::EC2::InternetGateway",
+			"Properties": {
+				"Tags": [{
+					"Key": "Name",
+					"Value": "InternetGateway"
+				}]
+			}
+		},
+		"VPCGatewayAttachment": {
+			"Type": "AWS::EC2::VPCGatewayAttachment",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"InternetGatewayId": {
+					"Ref": "InternetGateway"
+				}
+			}
+		},
+		"RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				}
+			}
+		},
+		"RoutePublicHostToInternet": {
+			"Type": "AWS::EC2::Route",
+			"Properties": {
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"RouteTableId": {
+					"Ref": "RouteTable"
+				},
+				"GatewayId": {
+					"Ref": "InternetGateway"
+				}
+			},
+			"DependsOn": "VPCGatewayAttachment"
+		},
+		"SubnetRouteAssociationDB": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "RouteTable"
+				},
+				"SubnetId": {
+					"Ref": "SubnetDB"
+				}
+			}
+		},
+		"SubnetRouteAssociationDB2": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "RouteTable"
+				},
+				"SubnetId": {
+					"Ref": "SubnetDB2"
+				}
+			}
+		},
+		"NetworkACLPublicHost": {
+			"Type": "AWS::EC2::NetworkAcl",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				}
+			}
+		},
+		"NetworkACLPublicEntry": {
+			"Type": "AWS::EC2::NetworkAclEntry",
+			"Properties": {
+				"CidrBlock": "0.0.0.0/0",
+				"Egress": false,
+				"NetworkAclId": {
+					"Ref": "NetworkACLPublicHost"
+				},
+				"Protocol": -1,
+				"RuleAction": "allow",
+				"RuleNumber": 10
+			}
+		},
+		"NetworkACLPublicExit": {
+			"Type": "AWS::EC2::NetworkAclEntry",
+			"Properties": {
+				"CidrBlock": "0.0.0.0/0",
+				"Egress": true,
+				"NetworkAclId": {
+					"Ref": "NetworkACLPublicHost"
+				},
+				"PortRange": {
+					"From": "1024",
+					"To": "65535"
+				},
+				"Protocol": 6,
+				"RuleAction": "allow",
+				"RuleNumber": 10
+			}
+		},
+		"SubnetNetworkACLAssociationDB": {
+			"Type": "AWS::EC2::SubnetNetworkAclAssociation",
+			"Properties": {
+				"NetworkAclId": {
+					"Ref": "NetworkACLPublicHost"
+				},
+				"SubnetId": {
+					"Ref": "SubnetDB"
+				}
+			}
+		},
+		"SubnetNetworkACLAssociationDB2": {
+			"Type": "AWS::EC2::SubnetNetworkAclAssociation",
+			"Properties": {
+				"NetworkAclId": {
+					"Ref": "NetworkACLPublicHost"
+				},
+				"SubnetId": {
+					"Ref": "SubnetDB2"
+				}
+			}
+		},
+		"DBSubnetGroup": {
+			"Type": "AWS::RDS::DBSubnetGroup",
+			"Properties": {
+				"DBSubnetGroupDescription": "IPSHARK Database Subnet",
+				"SubnetIds": [{
+					"Ref": "SubnetDB"
+				}, {
+					"Ref": "SubnetDB2"
+				}]
+			}
+		},
+		"SubnetDB": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"CidrBlock": "172.33.3.0/24",
+				"AvailabilityZone": "us-east-2a",
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [{
+					"Key": "Name",
+					"Value": "SubnetDB"
+				}]
+			}
+		},
+		"SubnetDB2": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"CidrBlock": "172.33.4.0/24",
+				"AvailabilityZone": "us-east-2c",
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [{
+					"Key": "Name",
+					"Value": "SubnetDB2"
+				}]
+			}
+		},
+		"SecurityGroupDB": {
+			"Type": "AWS::EC2::SecurityGroup",
+			"Properties": {
+				"GroupDescription": "Enable HTTP access via port 80 and SSH access",
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"SecurityGroupIngress": [{
+					"IpProtocol": "tcp",
+					"FromPort": "3306",
+					"ToPort": "3306",
+					"CidrIp": "0.0.0.0/0"
+				}]
+			}
+		},
+		"RDSCluster": {
+			"Type": "AWS::RDS::DBCluster",
+			"Properties": {
+				"MasterUsername": "ipshark",
+				"MasterUserPassword": "ipsharkpassword",
+				"Engine": "aurora-mysql",
+				"EngineVersion": "5.7.mysql_aurora.2.04.4",
+				"DBSubnetGroupName": {
+					"Ref": "DBSubnetGroup"
+				},
+				"DBClusterParameterGroupName": {
+					"Ref": "RDSDBClusterParameterGroup"
+				},
+				"VpcSecurityGroupIds": [{
+					"Ref": "SecurityGroupDB"
+				}]
+			}
+		},
+		"RDSDBInstance1": {
+			"Type": "AWS::RDS::DBInstance",
+			"Properties": {
+				"DBSubnetGroupName": {
+					"Ref": "DBSubnetGroup"
+				},
+				"DBParameterGroupName": {
+					"Ref": "RDSDBParameterGroup"
+				},
+				"Engine": "aurora-mysql",
+				"EngineVersion": "5.7.mysql_aurora.2.04.4",
+				"DBClusterIdentifier": {
+					"Ref": "RDSCluster"
+				},
+				"PubliclyAccessible": "true",
+				"AvailabilityZone": {
+					"Fn::GetAtt": [
+						"SubnetDB",
+						"AvailabilityZone"
+					]
+				},
+				"DBInstanceClass": "db.t2.small"
+			}
+		},
+		"RDSDBClusterParameterGroup": {
+			"Type": "AWS::RDS::DBClusterParameterGroup",
+			"Properties": {
+				"Description": "CloudFormation Sample Aurora Cluster Parameter Group",
+				"Family": "aurora-mysql5.7",
+				"Parameters": {
+					"time_zone": "US/Eastern",
+					"aws_default_s3_role": {
+						"Ref": "RdsAccessToS3Role"
+					},
+					"aurora_load_from_s3_role": {
+						"Ref": "RdsAccessToS3Role"
+					}
+				}
+			}
+		},
+		"RDSDBParameterGroup": {
+			"Type": "AWS::RDS::DBParameterGroup",
+			"Properties": {
+				"Description": "CloudFormation Sample Aurora Parameter Group",
+				"Family": "aurora-mysql5.7",
+				"Parameters": {
+					"sql_mode": "IGNORE_SPACE"
+				}
+			}
+		},
+		"RdsAccessToS3Role": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Sid": "",
+						"Effect": "Allow",
+						"Principal": {
+							"Service": "rds.amazonaws.com"
+						},
+						"Action": "sts:AssumeRole"
+					}]
+				},
+				"Description": "Role for allowing RDS Access to S3",
+				"RoleName": {
+					"Fn::Join": ["-", [{
+						"Ref": "AWS::StackName"
+					}, "RDS_ACCESS_TO_S3"]]
+				},
+				"ManagedPolicyArns": ["arn:aws:iam::aws:policy/AmazonS3FullAccess",
+					"arn:aws:iam::aws:policy/service-role/AmazonRDSDirectoryServiceAccess",
+					"arn:aws:iam::aws:policy/service-role/RDSCloudHsmAuthorizationRole"
+				]
+			}
+		}
+	}
+}
